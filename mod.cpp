@@ -1,4 +1,4 @@
-name = "7th Cavalry Gaming Auxiliary Mod DevBuild";
+name = "7th Cavalry Gaming Auxiliary Modpack DevBuild";
 picture = "logo_cav_ca.paa";
 actionName = "GitHub";
 action = "https://github.com/7cav/7CavAddon";
