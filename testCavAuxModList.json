@@ -1,0 +1,32 @@
+{
+    "workshop": {
+        "264337543765": {
+            "name": "MyMod1",
+            "url": "",
+            "requireResigning": false,
+            "license": "LICENSE permits",
+            "comment": ""
+        },
+        "243523462346": {
+            "name": "MyMod2",
+            "url": "",
+            "requireResigning": false,
+            "license": "LICENSE permits",
+            "comment": ""
+        },
+        "32452345": {
+            "name": "MyMod3",
+            "url": "",
+            "requireResigning": false,
+            "license": "LICENSE permits",
+            "comment": ""
+        },
+        "36543546": {
+            "name": "MyMod4",
+            "url": "",
+            "requireResigning": false,
+            "license": "LICENSE permits",
+            "comment": ""
+        }
+    }
+}
