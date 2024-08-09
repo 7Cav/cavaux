@@ -7,20 +7,20 @@ import fileinput
 import glob
 import shutil
 
-scriptPath   = os.path.realpath(__file__)
-scriptRoot   = os.path.dirname(scriptPath)
-PROJECTROOT  = os.path.dirname(os.path.dirname(scriptPath))
+scriptPath    = os.path.realpath(__file__)
+scriptRoot    = os.path.dirname(scriptPath)
+PROJECTROOT   = os.path.dirname(os.path.dirname(scriptPath))
 
-STEAMCMD     = os.path.join("steamcmd")
-HEMTT        = os.path.join("hemtt")
-ARMAKE       = os.path.join("armake")
+STEAMCMD      = os.path.join("steamcmd")
+HEMTT         = os.path.join("hemtt")
+ARMAKE        = os.path.join("armake")
 
-WORKDIR      = os.path.join(PROJECTROOT,".cavauxout")
-WORKSHOPOUT  = os.path.join(WORKDIR,"steamapps","workshop","content","107410")
-HEMTTRELEASE = os.path.join(PROJECTROOT,".hemttout","release")
+WORKDIR       = os.path.join(PROJECTROOT,".cavauxout")
+WORKSHOPOUT   = os.path.join(WORKDIR,"steamapps","workshop","content","107410")
+HEMTTRELEASE  = os.path.join(PROJECTROOT,".hemttout","release")
+RELEASEFOLDER = os.path.join(PROJECTROOT,"releases")
 
-
-def obtain_and_update_version():
+def get_and_set_version():
     result = subprocess.run(
         ["git", "describe", "--tags", "--abbrev=0"],
         stdout=subprocess.PIPE,
@@ -29,7 +29,7 @@ def obtain_and_update_version():
     )
     try:
         if result.returncode == 128:
-            raise Exception("No git tags detected using 0.0.0 instead")
+            raise Exception("Warning: No git tags detected using 0.0.0 instead")
         tagVersion = result.stdout
     except Exception as e:
         print(e)
@@ -81,7 +81,7 @@ def get_commit_id():
     return commitId
 
 
-def download_mod_files(complete_mod_list, STEAM_LOGIN, STEAM_PASS):
+def download_mod_files(complete_mod_list, STEAM_LOGIN, STEAM_PASS, verbose=False):
     login_cmd = [
         STEAMCMD,
         '+force_install_dir', WORKDIR,
@@ -94,17 +94,31 @@ def download_mod_files(complete_mod_list, STEAM_LOGIN, STEAM_PASS):
 
     full_cmd = login_cmd + mods_cmd_parts + ['+quit']
 
+    if verbose:
+        stdoutVar=None
+    else:
+        stdoutVar=subprocess.DEVNULL
+
     print(f"Downloading mods...")
     try:
-        subprocess.run(full_cmd, shell=True, check=False)
+        subprocess.run(full_cmd, shell=True, check=False, stdout=stdoutVar)
         print(f"Successfully downloaded mods")
     except subprocess.CalledProcessError as e:
         print(f"Failed to download mods: {e}")
 
 
+def handle_hemtt_build(verbose=False):
+    if verbose:
+        stdoutVar=None
+    else:
+        stdoutVar=subprocess.DEVNULL
+    subprocess.run(f"{HEMTT} release", shell=True, check=False, stdout=stdoutVar)
+
+
+
 def main():
     parser = argparse.ArgumentParser(
-        prog='ProgramName',
+        prog='assemble',
         description='What the program does',
         epilog='Text at the bottom of help')
 
@@ -116,6 +130,7 @@ def main():
 
     args = parser.parse_args()
     
+    # handle Config
     serverConfig = {
         "username": "",
         "password": ""
@@ -136,6 +151,7 @@ def main():
     if args.password:
         serverConfig.update({"password": args.password})
 
+
     # Obtain list
     modListPath = os.path.join(PROJECTROOT, "cavAuxModList.json")
     try: 
@@ -145,17 +161,18 @@ def main():
     modListDict = json.load(modListFile)
     modListFile.close()
 
+
     # Checking mod list
     print("Checking and verifying mod list...")
     for category in modListDict.keys():
         if "workshop" in category:
-            print(f"Checking {category} mods")
+            print(f"Checking {category} mods...") if args.verbose else ""
             for id in modListDict[category]:
-                print(f"> {modListDict[category][id]['name']} [{id}]")
+                print(f"> {modListDict[category][id]['name']} [{id}]") if args.verbose else ""
                 license = modListDict[category][id]['License']
                 if license != "License permits":
-                    print(f"  Non standard license agreement: '{license}'")
-    print()
+                    print(f"  Non standard license agreement: '{license}'") if args.verbose else ""
+    print() if args.verbose else ""
 
 
     # Create download and project working folder
@@ -166,11 +183,14 @@ def main():
     # Downloading mods from workshop
     print("Downloading mods from workshop...")
     if args.dryrun:
-        subprocess.run(f"{STEAMCMD} +quit", shell=True, check=args.verbose)
-        download_mod_files(modListDict['workshop'].keys(), serverConfig['username'], serverConfig["password"])
-    
+        subprocess.run(f"{STEAMCMD} +quit", shell=True, check=False)
+        download_mod_files(modListDict['workshop'].keys(), serverConfig['username'], serverConfig["password"], args.verbose)
+    else:
+        print("Warning: Running with dryrun parameter. Will use preexisting downloaded cache instead")
+    print() if args.verbose else ""
+
     # Check if mod have been downloaded properly and contain correct data
-    
+    print("Checking downloads...")
     downloadedMods = len(os.listdir(WORKSHOPOUT))
     expectedDownloadedMods = len(modListDict['workshop'].keys())
     if downloadedMods != expectedDownloadedMods:
@@ -182,21 +202,24 @@ def main():
         if not expectedMod in os.listdir(WORKSHOPOUT):
             print(f"[Error] {modListDict['workshop'][downloadedMod]['name']} [{downloadedMod}] does not exist or have not download properly")
             allModsExist=False
+        else:
+            print(f"Mod {modListDict['workshop'][expectedMod]['name']} [{expectedMod}] successfully downloaded...") if args.verbose else ""
 
     if allModsExist:
         print("All mods successfully downloaded")
-        print()
+        print() if args.verbose else ""
     else: 
         sys.exit(1)
 
-    # Assemble mod
-    # Build mod
-    version = obtain_and_update_version()
-    print()
+
+    # Assemble and build mod
+    version = get_and_set_version()
+    commit = get_commit_id()
+    print() if args.verbose else ""
 
     print("Building main addon")
-    subprocess.run(f"{HEMTT} release", shell=True, check=False)
-    print()
+    handle_hemtt_build(args.verbose)
+    print() if args.verbose else ""
 
     releaseFolder = os.path.join(WORKDIR,'release')
     releaseAddonFolder = os.path.join(releaseFolder,"addons")
@@ -208,10 +231,9 @@ def main():
     if not os.path.exists(releaseKeysFolder):
         os.makedirs(releaseKeysFolder)
 
-    commit = get_commit_id()
 
     # Create new keys
-    print("Creating new key...")
+    print("Creating keys...")
 
     os.chdir(releaseKeysFolder)
     keyName = f"cavaux_{version}.0-{commit}"
@@ -243,6 +265,10 @@ def main():
     for pbo in glob.glob(os.path.join(HEMTTRELEASE,'addons','*.pbo')):
         shutil.copy2(pbo, releaseAddonFolder)
 
+    # Remove releases cause we make our own
+    for hemttZip in glob.glob(os.path.join(RELEASEFOLDER,'*.zip')):
+        os.remove(os.path.join(RELEASEFOLDER, hemttZip))
+
     # Signing PBOS
     os.chdir(releaseAddonFolder)
     for pbo in glob.glob(os.path.join(releaseAddonFolder,'*.pbo')):
@@ -256,9 +282,16 @@ def main():
 
     os.remove(os.path.join(releaseKeysFolder,f"{keyName}.biprivatekey"))
 
-    # Building archive
 
-    shutil.make_archive(output_filename, 'zip', dir_name)
+    # Creating archive
+    print("Creating archive...")
+
+    shutil.copytree(os.path.join(WORKDIR,'release'), os.path.join(RELEASEFOLDER,'CavAux'), dirs_exist_ok=True)
+
+    shutil.make_archive(os.path.join(RELEASEFOLDER, f"cavaux-{version}.0-{commit}"), 'zip', os.path.join(RELEASEFOLDER,'CavAux'))
+    for releaseZip in glob.glob(os.path.join(RELEASEFOLDER,'*.zip')):
+        print(f"Created release: {os.path.join(RELEASEFOLDER, releaseZip)}")
+
 
 if __name__ == "__main__":
     try:
