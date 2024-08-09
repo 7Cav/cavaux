@@ -191,7 +191,11 @@ def main():
 
     # Check if mod have been downloaded properly and contain correct data
     print("Checking downloads...")
-    downloadedMods = len(os.listdir(WORKSHOPOUT))
+    try:
+        downloadedMods = len(os.listdir(WORKSHOPOUT))
+    except FileNotFoundError:
+        print(f"Failed to discover any mods in {WORKSHOPOUT}")
+        sys.exit(1)
     expectedDownloadedMods = len(modListDict['workshop'].keys())
     if downloadedMods != expectedDownloadedMods:
         print(f"[Error] Downloaded mod mismatch got {downloadedMods} expected {expectedDownloadedMods}")
@@ -232,31 +236,12 @@ def main():
         os.makedirs(releaseKeysFolder)
 
 
-    # Create new keys
-    print("Creating keys...")
-
-    os.chdir(releaseKeysFolder)
-    keyName = f"cavaux_{version}.0-{commit}"
-    subprocess.run(
-        [ARMAKE, 'keygen', '-f', keyName],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True
-    )
-    keys = glob.glob(os.path.join(releaseKeysFolder,'*'))
-    if len(keys) == 0:
-        print("[Error] No keys have been created") if args.verbose else ""
-        sys.exit(1)
-    for key in keys:
-        print(f"Key '{os.path.basename(key)}' have been created...") if args.verbose else ""
-
-    os.chdir(PROJECTROOT)
-
     # Copying mods
     for id in os.listdir(WORKSHOPOUT):
         for pbo in glob.glob(os.path.join(WORKSHOPOUT,id,'**','*.pbo'), recursive=True):
             print(f"Copying {os.path.basename(pbo)}") if args.verbose else ""
             shutil.copy2(os.path.join(pbo), releaseAddonFolder)
+
 
     # Copying over main mod
     shutil.copy2(os.path.join(HEMTTRELEASE,"mod.cpp"), releaseFolder)
@@ -269,6 +254,26 @@ def main():
     for hemttZip in glob.glob(os.path.join(RELEASEFOLDER,'*.zip')):
         os.remove(os.path.join(RELEASEFOLDER, hemttZip))
 
+
+    # Create keys
+    print("Creating keys and resigning addons...")
+    os.chdir(releaseKeysFolder)
+    keyName = f"cavaux_{version}.0-{commit}"
+    subprocess.run(
+        [ARMAKE, 'keygen', '-f', keyName],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True
+    )
+    keys = glob.glob(os.path.join(releaseKeysFolder,'*'))
+    # Check if successful
+    if len(keys) == 0:
+        print("[Error] No keys have been created")
+        sys.exit(1)
+    for key in keys:
+        print(f"Key '{os.path.basename(key)}' have been created...") if args.verbose else ""
+
+
     # Signing PBOS
     os.chdir(releaseAddonFolder)
     for pbo in glob.glob(os.path.join(releaseAddonFolder,'*.pbo')):
@@ -279,8 +284,14 @@ def main():
             stderr=subprocess.STDOUT,
             universal_newlines=True
         )
+        createdKey = glob.glob(os.path.join(releaseKeysFolder,f'{pbo}*.bisign'))
+        if not len(createdKey) == 1:
+            print(f"[Error] failed to sign {pbo}")
+            sys.exit(1)
+        print(f"Signing completed {createdKey[0]}") if args.verbose else ""
 
     os.remove(os.path.join(releaseKeysFolder,f"{keyName}.biprivatekey"))
+    os.chdir(PROJECTROOT)
 
 
     # Creating archive
