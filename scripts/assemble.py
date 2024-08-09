@@ -42,6 +42,7 @@ def obtain_and_update_version():
     verBuild = 0
 
     hemttConf = os.path.join(PROJECTROOT,".hemtt","project.toml")
+    modConf = os.path.join(PROJECTROOT,"mod.cpp")
     try: 
         def replaceAll(file,searchExp,replaceExp):
             for line in fileinput.input(file, inplace=1):
@@ -52,6 +53,8 @@ def obtain_and_update_version():
         replaceAll(hemttConf, "minor = 0", f"minor = {verMinor}")
         replaceAll(hemttConf, "patch = 0", f"patch = {verPatch}")
         replaceAll(hemttConf, "build = 0", f"build = {verBuild}")
+
+        replaceAll(modConf, "DevBuild", f"v{verMajor}.{verMinor}.{verPatch}.{verBuild}")
     except FileNotFoundError as e:
         print(e);sys.exit(1)
 
@@ -78,7 +81,6 @@ def get_commit_id():
     return commitId
 
 
-
 def download_mod_files(complete_mod_list, STEAM_LOGIN, STEAM_PASS):
     login_cmd = [
         STEAMCMD,
@@ -100,17 +102,6 @@ def download_mod_files(complete_mod_list, STEAM_LOGIN, STEAM_PASS):
         print(f"Failed to download mods: {e}")
 
 
-def resign_mod(mod_folder):
-    print(f"Resigning {mod_folder}")
-    get_commit_id()
-    print("TODO MAGIC MAGIC")
-    print("TODO MAGIC MAGIC")
-    print("TODO MAGIC MAGIC")
-    print("TODO MAGIC MAGIC")
-    print("TODO MAGIC MAGIC")
-    print("TODO MAGIC MAGIC")
-
-
 def main():
     parser = argparse.ArgumentParser(
         prog='ProgramName',
@@ -120,7 +111,8 @@ def main():
     parser.add_argument('-u', '--username', type=str)
     parser.add_argument('-p', '--password', type=str)
     parser.add_argument('-C', '--config', type=str)
-    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--dryrun', action='store_false')
 
     args = parser.parse_args()
     
@@ -154,18 +146,15 @@ def main():
     modListFile.close()
 
     # Checking mod list
-    print("Checking and verifying mod list")
+    print("Checking and verifying mod list...")
     for category in modListDict.keys():
         if "workshop" in category:
-            print(category)
+            print(f"Checking {category} mods")
             for id in modListDict[category]:
                 print(f"> {modListDict[category][id]['name']} [{id}]")
                 license = modListDict[category][id]['License']
                 if license != "License permits":
                     print(f"  Non standard license agreement: '{license}'")
-                requireResigning = modListDict[category][id]['requireResigning']
-                if requireResigning:
-                    print(f"  NOTE: {id} will be resigned.")
     print()
 
 
@@ -175,19 +164,27 @@ def main():
     
     
     # Downloading mods from workshop
-    print("Downloading mods from workshop")
-    #subprocess.run(f"{steamcmdBinary} +quit", shell=True, check=args.verbose)
-    #download_mod_files(modListDict['workshop'].keys(), serverConfig['username'], serverConfig["password"])
-
+    print("Downloading mods from workshop...")
+    if args.dryrun:
+        subprocess.run(f"{STEAMCMD} +quit", shell=True, check=args.verbose)
+        download_mod_files(modListDict['workshop'].keys(), serverConfig['username'], serverConfig["password"])
+    
     # Check if mod have been downloaded properly and contain correct data
+    
+    downloadedMods = len(os.listdir(WORKSHOPOUT))
+    expectedDownloadedMods = len(modListDict['workshop'].keys())
+    if downloadedMods != expectedDownloadedMods:
+        print(f"[Error] Downloaded mod mismatch got {downloadedMods} expected {expectedDownloadedMods}")
+        sys.exit(1)
+
     allModsExist=True
-    for downloadedMod in os.listdir(WORKSHOPOUT):
-        if not downloadedMod in modListDict['workshop'].keys():
+    for expectedMod in modListDict['workshop'].keys():
+        if not expectedMod in os.listdir(WORKSHOPOUT):
             print(f"[Error] {modListDict['workshop'][downloadedMod]['name']} [{downloadedMod}] does not exist or have not download properly")
             allModsExist=False
 
     if allModsExist:
-        print("All mods successfully download")
+        print("All mods successfully downloaded")
         print()
     else: 
         sys.exit(1)
@@ -195,25 +192,11 @@ def main():
     # Assemble mod
     # Build mod
     version = obtain_and_update_version()
-    subprocess.run(f"{HEMTT} release", shell=True, check=args.verbose)
+    print()
 
-    #for category in modListDict.keys():
-    #    if "workshop" in category:
-    #        for id in modListDict[category]:
-    #            print(f"{modListDict[category][id]["name"]} [{id}]")
-    #            modFolders = next(os.walk(os.path.join(WORKSHOPOUT,id)))[1]
-    #            for folder in modFolders:
-    #                if folder in ["addons","Addons"]:
-    #                    content = len(glob.glob(os.path.join(WORKSHOPOUT,id,folder,'*')))
-    #                    pbos = glob.glob(os.path.join(WORKSHOPOUT,id,folder,'*.pbo'))
-    #                    bisign = glob.glob(os.path.join(WORKSHOPOUT,id,folder,'*.bisign'))
-    #                    print(f"  PBO(s):    {len(pbos)}")
-    #                    print(f"  bisign(s): {len(bisign)}")
-    #                    print(f"  Total:     {content}")
-    #                    if len(bisign) == 0 or modListDict[category][id]['requireResigning']:
-    #                        print("WARNING: No mod not marked as requiring resigning tho no keys detected resigning it anyways")
-    #                        resign_mod(os.path.join(WORKSHOPOUT,id))
-    #            print()
+    print("Building main addon")
+    subprocess.run(f"{HEMTT} release", shell=True, check=False)
+    print()
 
     releaseFolder = os.path.join(WORKDIR,'release')
     releaseAddonFolder = os.path.join(releaseFolder,"addons")
@@ -227,23 +210,30 @@ def main():
 
     commit = get_commit_id()
 
+    # Create new keys
     print("Creating new key...")
+
     os.chdir(releaseKeysFolder)
     keyName = f"cavaux_{version}.0-{commit}"
-    result = subprocess.run(
+    subprocess.run(
         [ARMAKE, 'keygen', '-f', keyName],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True
     )
-    print(result.stdout)
+    keys = glob.glob(os.path.join(releaseKeysFolder,'*'))
+    if len(keys) == 0:
+        print("[Error] No keys have been created") if args.verbose else ""
+        sys.exit(1)
+    for key in keys:
+        print(f"Key '{os.path.basename(key)}' have been created...") if args.verbose else ""
+
     os.chdir(PROJECTROOT)
 
-
-
+    # Copying mods
     for id in os.listdir(WORKSHOPOUT):
         for pbo in glob.glob(os.path.join(WORKSHOPOUT,id,'**','*.pbo'), recursive=True):
-            print(f"Copying {os.path.basename(pbo)}")
+            print(f"Copying {os.path.basename(pbo)}") if args.verbose else ""
             shutil.copy2(os.path.join(pbo), releaseAddonFolder)
 
     # Copying over main mod
@@ -256,7 +246,7 @@ def main():
     # Signing PBOS
     os.chdir(releaseAddonFolder)
     for pbo in glob.glob(os.path.join(releaseAddonFolder,'*.pbo')):
-        print(f"Signing {pbo}")
+        print(f"Signing {pbo}") if args.verbose else ""
         subprocess.run(
             [ARMAKE, 'sign', '-f', f"{os.path.join(releaseKeysFolder,f"{keyName}.biprivatekey")}", pbo],
             stdout=subprocess.PIPE,
@@ -266,8 +256,9 @@ def main():
 
     os.remove(os.path.join(releaseKeysFolder,f"{keyName}.biprivatekey"))
 
+    # Building archive
 
-
+    shutil.make_archive(output_filename, 'zip', dir_name)
 
 if __name__ == "__main__":
     try:

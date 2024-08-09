@@ -33,4 +33,3 @@ class CfgMods {
 };
 
 #include "CfgSettings.hpp"
-#include "CfgCavAuxMods.hpp"
